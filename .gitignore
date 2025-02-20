@@ -101,3 +101,21 @@ ENV/
 .mypy_cache/
 
 .github/**
+
+.idea/
+
+# In the macOS operating system, .DS_Store is a file that stores custom attributes 
+# of its containing folder, such as folder view options, icon positions, and other
+# visual information
+.DS_STORE
+
+# A '. pth' file in PyTorch is a file format used to save different states of model 
+# including it's weights, biases and other parameter 
+*.pth
+
+# .swp files are created by text editors including Vim and Nano, they should be 
+# automatically deleted when you close the file and exit the editor.
+.swp
+
+# temp files
+jeff/
