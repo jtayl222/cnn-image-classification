@@ -73,6 +73,7 @@ jobs:
 
 ### Step 2: Model Versioning with MLFlow
 
+```python
 import mlflow
 import mlflow.pytorch
 
@@ -84,7 +85,7 @@ with mlflow.start_run():
     mlflow.pytorch.log_model(model, "model")
 ```
 
-2. **Register Model**: After training, register the model in the MLFlow Model Registry.
+**Register Model**: After training, register the model in the MLFlow Model Registry.
 
 ```python
 # Register the model
