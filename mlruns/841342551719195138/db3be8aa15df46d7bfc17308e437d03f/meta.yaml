@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/user/REPOS/udacity/aipnd-project/mlruns/841342551719195138/db3be8aa15df46d7bfc17308e437d03f/artifacts
+end_time: 1742853119462
+entry_point_name: ''
+experiment_id: '841342551719195138'
+lifecycle_stage: active
+run_id: db3be8aa15df46d7bfc17308e437d03f
+run_name: honorable-mule-454
+run_uuid: db3be8aa15df46d7bfc17308e437d03f
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1742851518067
+status: 3
+tags: []
+user_id: user

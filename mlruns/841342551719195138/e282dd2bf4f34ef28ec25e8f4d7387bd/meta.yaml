@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/user/REPOS/udacity/aipnd-project/mlruns/841342551719195138/e282dd2bf4f34ef28ec25e8f4d7387bd/artifacts
+end_time: 1742848414033
+entry_point_name: ''
+experiment_id: '841342551719195138'
+lifecycle_stage: active
+run_id: e282dd2bf4f34ef28ec25e8f4d7387bd
+run_name: luxuriant-kite-591
+run_uuid: e282dd2bf4f34ef28ec25e8f4d7387bd
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1742846868787
+status: 3
+tags: []
+user_id: user

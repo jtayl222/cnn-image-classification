@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/user/REPOS/udacity/aipnd-project/mlruns/841342551719195138/a4dcc97baf53450586de2fe4a72b8ce8/artifacts
+end_time: 1742851518051
+entry_point_name: ''
+experiment_id: '841342551719195138'
+lifecycle_stage: active
+run_id: a4dcc97baf53450586de2fe4a72b8ce8
+run_name: legendary-slug-832
+run_uuid: a4dcc97baf53450586de2fe4a72b8ce8
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1742849940797
+status: 3
+tags: []
+user_id: user
