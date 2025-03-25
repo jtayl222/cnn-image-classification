@@ -16,7 +16,7 @@ import mlflow.pytorch
 from mlflow.models.signature import infer_signature
 import time
 
-def train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=5, print_every=40, device="cpu"):
+def train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=5, device="cpu"):
     model.to(device)
     for epoch in range(epochs):
         model.train()
@@ -86,7 +86,7 @@ def save_checkpoint(filepath, model):
     torch.save(checkpoint, filepath)
 
 
-def init_data_loading(data_dir):
+def init_data_loading(data_dir, batch_size=64):
     train_transforms = transforms.Compose([transforms.RandomRotation(30),
                                            transforms.RandomResizedCrop(224),
                                            transforms.RandomHorizontalFlip(),
@@ -101,8 +101,8 @@ def init_data_loading(data_dir):
     train_data = datasets.ImageFolder(data_dir + '/train', transform=train_transforms)
     validation_data = datasets.ImageFolder(data_dir + '/valid', transform=validation_transforms)
     print("training size =", len(train_data.samples), "validation size =", len(validation_data.samples))
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=64, shuffle=True)
-    validation_loader = torch.utils.data.DataLoader(validation_data, batch_size=64)
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    validation_loader = torch.utils.data.DataLoader(validation_data, batch_size=batch_size)
     return train_loader, validation_loader
 
 # Create a signature and input example for the model for MLflow logging
@@ -131,7 +131,7 @@ def main(
         arch="vgg16",
         epochs=5,
         device="cpu",
-        print_every = 40):
+        batch_size=64):
     
     # Example hyperparameter grid
     lr_values = [0.0001, 0.001, 0.01]
@@ -147,18 +147,26 @@ def main(
                 mlflow.log_param("save_dir", save_dir)
                 mlflow.log_param("arch", arch)
                 mlflow.log_param("learning_rate", learning_rate)
-                mlflow.log_param("hidden_units", hidden_units)
+                mlflow.log_param("batch_size", batch_size)
                 mlflow.log_param("epochs", epochs)
+                mlflow.log_param("hidden_units", hidden_units)
                 mlflow.log_param("device", device)
-                mlflow.log_param("print_every", print_every)
 
-                train_loader, validation_loader = init_data_loading(data_dir)        
+                train_loader, validation_loader = init_data_loading(data_dir, batch_size=64)        
                 model = load_model(arch, save_dir, hidden_units, train_loader=train_loader)
+                
                 criterion = nn.NLLLoss()
-                optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-                scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+                mlflow.log_param("criterion", criterion.__class__.__name__)
 
-                train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=epochs, print_every=print_every, device=device)
+                optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+                mlflow.log_param("optimizer", optimizer.__class__.__name__)
+
+                scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+                mlflow.log_param("scheduler", scheduler.__class__.__name__)
+                mlflow.log_param("step_size", 5)
+                mlflow.log_param("gamma", 0.1)
+
+                train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=epochs, device=device)
 
                 signature, single_input_example = create_signature(model, validation_loader)
                 single_input_example_np = single_input_example.numpy()
@@ -181,7 +189,6 @@ if __name__ == '__main__':
     parser.add_argument("--save_dir", help="checkpoint file", default=None)
     parser.add_argument("--arch", help="Example: vgg13", default="vgg16")
     parser.add_argument("--epochs", default=5, type=int)
-    parser.add_argument("--print_every", default=40, type=int)
     parser.add_argument("--gpu")
     args = parser.parse_args()
 
@@ -197,5 +204,5 @@ if __name__ == '__main__':
         arch=args.arch,
         epochs=args.epochs,
         device=device,
-        print_every=args.print_every
+        batch_size=64
     )
