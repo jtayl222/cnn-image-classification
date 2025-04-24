@@ -15,6 +15,7 @@ import mlflow
 import mlflow.pytorch
 from mlflow.models.signature import infer_signature
 import time
+import os
 
 def train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=5, device="cpu"):
     model.to(device)
@@ -137,7 +138,7 @@ def main(
     lr_values = [0.0001, 0.001, 0.01]
     hidden_units_values = [256, 512, 1024]
 
-    mlflow.set_tracking_uri("file:./mlruns")
+    mlflow.set_tracking_uri("http://mlflow.local")
     mlflow.set_experiment("flower-classifier")
 
     for learning_rate in lr_values:
@@ -191,6 +192,15 @@ if __name__ == '__main__':
     parser.add_argument("--epochs", default=5, type=int)
     parser.add_argument("--gpu")
     args = parser.parse_args()
+
+    # !!! These MinIO credentials are FOR DEMO/DEV USE ONLY.
+    # !!! In production, USE KUBERNETES SECRETS OR SEALED SECRETS FOR SECURE ACCESS.
+
+    # MinIO S3 connection
+    os.environ["AWS_ACCESS_KEY_ID"] = "minioadmin"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "minioadmin"
+    os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://192.168.1.85:30140"  # Or your MinIO external URL
+    os.environ["MLFLOW_S3_IGNORE_TLS"] = "true"
 
     if args.gpu:
         device = "cuda:0"
