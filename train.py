@@ -203,4 +203,11 @@ if __name__ == '__main__':
     criterion = nn.NLLLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=args.epochs, device=device)
+    main(
+        data_dir=args.data_directory,
+        save_dir=args.save_dir,
+        arch=args.arch,
+        epochs=args.epochs,
+        device=device,
+        batch_size=args.batch_size
+    )
