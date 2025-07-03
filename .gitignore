@@ -117,5 +117,5 @@ ENV/
 # automatically deleted when you close the file and exit the editor.
 .swp
 
-# temp files
-jeff/
+# mlflow files
+mlruns/

@@ -1,11 +1,3 @@
-####
-#### Based on:
-#### - https://github.com/udacity/cd0281-Introduction-to-Neural-Networks-with-PyTorch/blob/master/deep-learning-with-pytorch/Part%208%20-%20Transfer%20Learning%20(Solution).ipynb
-#### - https://github.com/udacity/cd0281-Introduction-to-Neural-Networks-with-PyTorch/blob/master/deep-learning-with-pytorch/Part%207%20-%20Loading%20Image%20Data%20(Solution).ipynb
-####
-#### Also see https://github.com/pytorch/vision/blob/main/torchvision/models/vgg.py
-####
-
 import torch
 from torch import nn, optim
 from torchvision import datasets, transforms
@@ -16,6 +8,41 @@ import mlflow.pytorch
 from mlflow.models.signature import infer_signature
 import time
 import os
+import tempfile
+import sys
+
+
+
+def print_env_var_hint():
+
+    MLFLOW_ENV_VARS = [
+        "MLFLOW_TRACKING_URI",
+        "MLFLOW_TRACKING_USERNAME",
+        "MLFLOW_TRACKING_PASSWORD",
+        "MLFLOW_S3_ENDPOINT_URL",
+        "MLFLOW_DB_USERNAME",
+        "MLFLOW_DB_PASSWORD",
+        "MLFLOW_FLASK_SECRET_KEY",
+    ]
+    descriptions = {
+        "MLFLOW_TRACKING_URI": "MLflow tracking server URI (e.g., http://mlflow.local)",
+        "MLFLOW_TRACKING_USERNAME": "Username for MLflow tracking server authentication",
+        "MLFLOW_TRACKING_PASSWORD": "Password for MLflow tracking server authentication",
+        "MLFLOW_S3_ENDPOINT_URL": "S3/MinIO endpoint for artifact storage (e.g., http://minio:9000)",
+        "MLFLOW_DB_PASSWORD": "Password for MLflow backend database",
+        "MLFLOW_FLASK_SECRET_KEY": "Flask secret key for MLflow UI session security",
+        "MLFLOW_DB_USERNAME": "Username for MLflow backend database",
+    }
+    missing = [var for var in MLFLOW_ENV_VARS if var not in os.environ or not os.environ[var]]
+    if missing:
+        print("\n❌ Hint: You may be missing required environment variables:\n")
+        for var in MLFLOW_ENV_VARS:
+            status = "MISSING" if var in missing else "OK"
+            desc = descriptions.get(var, "")
+            print(f"  [{status:7}] {var:28} {desc}")
+        print("\nPlease set all required environment variables before running this script.\n")
+        print("They can be set in your shell or in a .env file loaded by your environment.")
+        sys.exit(1)
 
 def train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=5, device="cpu"):
     model.to(device)
@@ -107,9 +134,9 @@ def init_data_loading(data_dir, batch_size=64):
     return train_loader, validation_loader
 
 # Create a signature and input example for the model for MLflow logging
-def create_signature(model, validation_loader):
+def create_signature(model, validation_loader, device):
     images, labels = next(iter(validation_loader))   # get a single batch from validation
-    images = images.to('cpu')                 # ensure it's on CPU for logging
+    images = images.to(device)                 # ensure it's on CPU for logging
 
     model.eval()
     with torch.no_grad():
@@ -121,8 +148,8 @@ def create_signature(model, validation_loader):
 
     # Convert to NumPy for signature inference
     signature = infer_signature(
-        single_input_example.numpy(),
-        single_output.numpy()
+        single_input_example.cpu().detach().numpy(),
+        single_output.cpu().detach().numpy()
     )
     return signature, single_input_example
     
@@ -138,74 +165,95 @@ def main(
     lr_values = [0.0001, 0.001, 0.01]
     hidden_units_values = [256, 512, 1024]
 
-    mlflow.set_tracking_uri("http://mlflow.local")
-    mlflow.set_experiment("flower-classifier")
+    if "MLFLOW_TRACKING_URI" not in os.environ:
+        print("MLFLOW_TRACKING_URI environment variable is not set.")
+        print_env_var_hint()
+        exit(1)
+
+    mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
+    try:
+        mlflow.set_experiment("cnn-flower-classifier")
+    except mlflow.exceptions.MlflowException as e:
+        print("ERROR setting MLflow experiment:", e)
+        print_env_var_hint()
+        exit(1)
+
+    # Load data once, outside the hyperparameter loops
+    train_loader, validation_loader = init_data_loading(data_dir, batch_size=batch_size)
 
     for learning_rate in lr_values:
         for hidden_units in hidden_units_values:
-            with mlflow.start_run():
-                mlflow.log_param("data_dir", data_dir)
-                mlflow.log_param("save_dir", save_dir)
-                mlflow.log_param("arch", arch)
-                mlflow.log_param("learning_rate", learning_rate)
-                mlflow.log_param("batch_size", batch_size)
-                mlflow.log_param("epochs", epochs)
-                mlflow.log_param("hidden_units", hidden_units)
-                mlflow.log_param("device", device)
+            # Load model with current hyperparameters
+            model = load_model(arch, save_dir, hidden_units, train_loader=train_loader)
+            
+            with tempfile.TemporaryDirectory() as local_artifact_dir:
+                print("local_artifact_dir =", local_artifact_dir)
 
-                train_loader, validation_loader = init_data_loading(data_dir, batch_size=64)        
-                model = load_model(arch, save_dir, hidden_units, train_loader=train_loader)
-                
-                criterion = nn.NLLLoss()
-                mlflow.log_param("criterion", criterion.__class__.__name__)
+                # Model checkpoint saved locally
+                model_path = os.path.join(local_artifact_dir, "model")
+                torch.save(model.state_dict(), model_path)
 
-                optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-                mlflow.log_param("optimizer", optimizer.__class__.__name__)
+                with mlflow.start_run(run_name=f"lr={learning_rate}, hu={hidden_units}"):
+                    mlflow.log_param("data_dir", data_dir)
+                    mlflow.log_param("save_dir", save_dir)
+                    mlflow.log_param("arch", arch)
+                    mlflow.log_param("learning_rate", learning_rate)
+                    mlflow.log_param("batch_size", batch_size)
+                    mlflow.log_param("epochs", epochs)
+                    mlflow.log_param("hidden_units", hidden_units)
+                    mlflow.log_param("device", device)
 
-                scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-                mlflow.log_param("scheduler", scheduler.__class__.__name__)
-                mlflow.log_param("step_size", 5)
-                mlflow.log_param("gamma", 0.1)
+                    criterion = nn.NLLLoss()
+                    mlflow.log_param("criterion", criterion.__class__.__name__)
 
-                train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=epochs, device=device)
+                    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+                    mlflow.log_param("optimizer", optimizer.__class__.__name__)
 
-                signature, single_input_example = create_signature(model, validation_loader)
-                single_input_example_np = single_input_example.numpy()
-                mlflow.pytorch.log_model(
-                    model, 
-                    artifact_path="model",
-                    input_example=single_input_example_np,
-                    signature=signature
-                )
+                    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+                    mlflow.log_param("scheduler", scheduler.__class__.__name__)
+                    mlflow.log_param("step_size", 5)
+                    mlflow.log_param("gamma", 0.1)
 
-                if save_dir is not None:
-                    save_checkpoint(save_dir, model)
+                    train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=epochs, device=device)
 
-###
-### Ref: https://docs.python.org/3/howto/argparse.html
-###
+                    signature, single_input_example = create_signature(model, validation_loader, device)
+                    single_input_example_np = single_input_example.cpu().detach().numpy()
+                    mlflow.pytorch.log_model(
+                        model, 
+                        artifact_path="model",
+                        input_example=single_input_example_np,
+                        signature=signature
+                    )
+
+                    if save_dir is not None:
+                        save_checkpoint(save_dir, model)
+
 if __name__ == '__main__':
+    # check_env_vars()
+
+    # Parse command line arguments
     parser = argparse.ArgumentParser(description="Train a new network on a data set")
     parser.add_argument("data_directory", help="Directory containing train/{class}/example", default="flowers")
     parser.add_argument("--save_dir", help="checkpoint file", default=None)
     parser.add_argument("--arch", help="Example: vgg13", default="vgg16")
     parser.add_argument("--epochs", default=5, type=int)
-    parser.add_argument("--gpu")
+    parser.add_argument("--cpu", action="store_true", help="Use CPU for training")
+    parser.add_argument("--batch_size", default=64, type=int, help="Batch size for training")
     args = parser.parse_args()
 
-    # !!! These MinIO credentials are FOR DEMO/DEV USE ONLY.
-    # !!! In production, USE KUBERNETES SECRETS OR SEALED SECRETS FOR SECURE ACCESS.
-
-    # MinIO S3 connection
-    os.environ["AWS_ACCESS_KEY_ID"] = "minioadmin"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "minioadmin"
-    os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://192.168.1.85:30140"  # Or your MinIO external URL
-    os.environ["MLFLOW_S3_IGNORE_TLS"] = "true"
-
-    if args.gpu:
-        device = "cuda:0"
+    # Device selection logic
+    if args.cpu:
+        device = torch.device("cpu")
+        print("Forcing CPU usage as requested.")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        print("CUDA device available, using: cuda:0")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+        print(f"MPS device available, using: {device}")
     else:
-        device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cpu")
+        print("No GPU/MPS device found. Using CPU.")
 
     print("Calling main()")
     main(
@@ -214,5 +262,5 @@ if __name__ == '__main__':
         arch=args.arch,
         epochs=args.epochs,
         device=device,
-        batch_size=64
+        batch_size=args.batch_size
     )
