@@ -10,6 +10,7 @@ import time
 import os
 import tempfile
 import sys
+from utils import train, evaluate
 
 
 
@@ -43,66 +44,6 @@ def print_env_var_hint():
         print("\nPlease set all required environment variables before running this script.\n")
         print("They can be set in your shell or in a .env file loaded by your environment.")
         sys.exit(1)
-
-def train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=5, device="cpu"):
-    model.to(device)
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0
-        start_time = time.time()
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
-            logps = model.forward(images)
-            loss = criterion(logps, labels)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-
-        model.eval()
-        validation_loss, accuracy, top5_accuracy = evaluate(model, validation_loader, criterion, device)
-        epoch_loss = running_loss / len(train_loader)
-        epoch_time = time.time() - start_time
-        print(f"Epoch {epoch+1}/{epochs}.. "
-              f"Train loss: {epoch_loss:.3f}.. "
-              f"Validation loss: {validation_loss:.3f}.. "
-              f"Test accuracy: {accuracy:.3f}.. "
-              f"Epoch time: {epoch_time:.3f}s")
-        mlflow.log_metric("train_loss", epoch_loss, step=epoch+1)
-        mlflow.log_metric("validation_loss", validation_loss, step=epoch+1)
-        mlflow.log_metric("accuracy", accuracy, step=epoch+1)
-        mlflow.log_metric("epoch_time", epoch_time, step=epoch+1)
-        mlflow.log_metric("top_5_accuracy", top5_accuracy, step=epoch+1)
-        
-        scheduler.step()
-        current_scheduler_step = scheduler.last_epoch
-        mlflow.log_metric("scheduler_step", current_scheduler_step, step=epoch+1)
-
-
-def evaluate(model, dataloader, criterion, device):
-    accuracy = 0
-    test_loss = 0
-    top5_accuracy = 0
-    model.eval()
-    model.to(device)
-    with torch.no_grad():
-        for images, labels in dataloader:
-            images, labels = images.to(device), labels.to(device)
-            # print(images.shape)
-            logps = model.forward(images)
-            batch_loss = criterion(logps, labels)
-            test_loss += batch_loss.item()
-            ## Calculating the accuracy
-            ps = torch.exp(logps)
-            top_p, top_class = ps.topk(1, dim=1)
-            equals = top_class == labels.view(*top_class.shape)
-            accuracy += torch.mean(equals.type(torch.FloatTensor)).item()
-            top_p, top_classes = ps.topk(5, dim=1)
-            matches = top_classes.eq(labels.view(-1, 1))
-            top5_correct = matches.any(dim=1).float().sum().item()
-            top5_accuracy += top5_correct / labels.size(0)
-
-    return test_loss / len(dataloader), accuracy / len(dataloader), top5_accuracy / len(dataloader)
 
 def save_checkpoint(filepath, model):
     checkpoint = {'class_to_idx': model.class_to_idx,
@@ -239,6 +180,8 @@ if __name__ == '__main__':
     parser.add_argument("--epochs", default=5, type=int)
     parser.add_argument("--cpu", action="store_true", help="Use CPU for training")
     parser.add_argument("--batch_size", default=64, type=int, help="Batch size for training")
+    parser.add_argument("--learning_rate", default=0.001, type=float, help="Learning rate for optimizer")
+    parser.add_argument("--hidden_units", default=512, type=int, help="Number of hidden units in classifier")
     args = parser.parse_args()
 
     # Device selection logic
@@ -255,12 +198,9 @@ if __name__ == '__main__':
         device = torch.device("cpu")
         print("No GPU/MPS device found. Using CPU.")
 
-    print("Calling main()")
-    main(
-        data_dir=args.data_directory,
-        save_dir=args.save_dir,
-        arch=args.arch,
-        epochs=args.epochs,
-        device=device,
-        batch_size=args.batch_size
-    )
+    train_loader, validation_loader = init_data_loading(args.data_directory, batch_size=args.batch_size)
+    model = load_model(args.arch, args.save_dir, args.hidden_units, train_loader=train_loader)
+    criterion = nn.NLLLoss()
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    train(model, train_loader, validation_loader, criterion, optimizer, scheduler, epochs=args.epochs, device=device)

@@ -5,49 +5,51 @@ from PIL import Image
 from torchvision.transforms import transforms
 
 from load_model import load_model
+from utils import process_image
 
 
 def process_image(image, test_transforms):
-    ''' Scales, crops, and normalizes a PIL image for a PyTorch model,
-        returns an Numpy array
-    '''
-
-    with Image.open(image) as im:
-        # im.show()
-        im = test_transforms(im)
-        # print(im.shape)
-        # numpy_array = im.numpy().transpose(1,2,0)
-        # print(numpy_array.shape)
-        return im
+    try:
+        with Image.open(image) as im:
+            # im.show()
+            im = test_transforms(im)
+            # print(im.shape)
+            # numpy_array = im.numpy().transpose(1,2,0)
+            # print(numpy_array.shape)
+            return im
+    except FileNotFoundError:
+        print(f"Error: File not found: {image}")
+        return None
+    except Exception as e:
+        print(f"Error processing image {image}: {e}")
+        return None
 
 def predictor(image_path, model, topk=5, device='cuda'):
-    ''' Predict the class (or classes) of an image using a trained deep learning model.
-    '''
-
-    print("image_path: ", image_path)
-    test_transforms = transforms.Compose([transforms.Resize(255),
-                                          transforms.CenterCrop(224),
-                                          transforms.ToTensor(),
-                                          transforms.Normalize([0.485, 0.456, 0.406],
-                                                               [0.229, 0.224, 0.225])])
-    pt_image = process_image(image_path, test_transforms)
-    # print(pt_image.shape)
-
-    images = pt_image[None, :, :, :]
-    # print(images.shape)
-
-    model.to(device)
-    images = images.to(device)
-
-    # Turn off dropout
-    model.eval()
-
-    output = model.forward(images)
-    ps = torch.exp(output)
-    top_p, top_class = ps.topk(topk, dim=1)
-    top_class_labels = [model.classes[c] for c in top_class.data.tolist()[0]]
-
-    return top_p.data.tolist()[0], top_class_labels
+    try:
+        print("image_path: ", image_path)
+        test_transforms = transforms.Compose([transforms.Resize(255),
+                                              transforms.CenterCrop(224),
+                                              transforms.ToTensor(),
+                                              transforms.Normalize([0.485, 0.456, 0.406],
+                                                                   [0.229, 0.224, 0.225])])
+        pt_image = process_image(image_path, test_transforms)
+        if pt_image is None:
+            return None, None
+        images = pt_image[None, :, :, :]
+        model.to(device)
+        images = images.to(device)
+        model.eval()
+        output = model.forward(images)
+        ps = torch.exp(output)
+        top_p, top_class = ps.topk(topk, dim=1)
+        top_class_labels = [model.classes[c] for c in top_class.data.tolist()[0]]
+        return top_p.data.tolist()[0], top_class_labels
+    except FileNotFoundError:
+        print(f"Error: File not found: {image_path}")
+        return None, None
+    except Exception as e:
+        print(f"Error in prediction: {e}")
+        return None, None
 
 def main(
         path_to_image="flowers/valid/95/image_07512.jpg",
@@ -58,6 +60,9 @@ def main(
 
     model = load_model("vgg16", checkpoint, None, train_loader=None)
     top_p, top_class = predictor(path_to_image, model, top_k, device)
+    if top_p is None:
+        print("Prediction failed.")
+        return
     print(top_p)
     #print(top_class)
 
